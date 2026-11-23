@@ -1,0 +1,23 @@
+name: Synthetic figure smoke test
+on: [push, pull_request]
+jobs:
+  figures:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: environment.yml
+          activate-environment: pygmt-research
+      - run: python -m pip install --no-deps .
+      - run: pygmt-research doctor
+      - run: pygmt-research demo comparison runs/comparison
+      - run: pygmt-research demo profile runs/profile
+      - run: python -c "from pathlib import Path; import pandas as pd; p=Path('runs/profile/output'); assert (p/'figure.png').read_bytes()[:8] == bytes.fromhex('89504e470d0a1a0a'); d=pd.read_csv(p/'profile.csv'); assert d.distance_km.is_monotonic_increasing and d.notna().all().all()"

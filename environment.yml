@@ -1,0 +1,18 @@
+name: pygmt-research
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - pygmt=0.14
+  - gmt=6.5
+  - ghostscript
+  - numpy
+  - pandas
+  - xarray
+  - netcdf4
+  - scipy
+  - pyproj
+  - pip
+  - setuptools
+  - wheel
