@@ -12,6 +12,7 @@ dependencies:
   - xarray
   - netcdf4
   - scipy
+  - pillow
   - pyproj
   - pip
   - setuptools

@@ -30,6 +30,18 @@ The generated spec is a working example. Set grids to one to four objects with f
 
 Omit profile for maps only. For profile set start and end as [longitude, latitude] and step_km as a maximum sampling interval. Points follow the WGS84 geodesic, including both endpoints. Each grid is bilinearly interpolated on its native axes, and missing samples remain missing. No subtraction, smoothing or reference-date adjustment is implicit.
 
+## Panel layout
+
+Maps share a frame size and a compact 0.85 cm gutter. The optional profile
+spans the full map row with the same frame-to-frame gutter. A shared colorbar
+sits outside the last map. Panel order is left to right, then the profile.
+In spec.json, set `"panel_labels": "lower"` for (a), (b), or use `"numeric"`
+or a list such as `["B", "C", "D"]`. The default is upper case. Tags have
+black lettering and a white background with 30% transparency.
+
+The exported PNG is checked for aligned frame rules and equal gutters.
+See layout.json for measured panel bounds in pixels.
+
 ## License
 
 MIT for this project's code. Dependencies retain their own licenses.

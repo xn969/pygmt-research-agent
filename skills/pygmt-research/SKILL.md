@@ -10,3 +10,5 @@ Inspect the user's NetCDF variable names, coordinate axes, coverage, units and m
 Run `pygmt-research render SPEC.json NEW_OUTPUT_DIR`. Read the status, inspect the PNG and check sampled distances and finite values. Report the figure, editable script, spec and profile table if present. Warn about saturation if values exceed the selected scale. Keep shared scientific parameters fixed across a batch.
 
 For an unfamiliar layout, start with a copy of the editable figure.py and adapt native PyGMT code in the user's project. Preserve the original inputs and the validated recipe. Record any changes to sampling or scientific assumptions.
+
+Use panel_labels in the spec for user-requested lettering (upper, lower, numeric or a list). Read layout.json after rendering and inspect the preview for long titles, clipped annotations and legend overlap. Keep the full-width profile aligned with the outer map frames.
