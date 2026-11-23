@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygmt-research-agent"
-version = "0.1.0a4"
+version = "0.1.0a5"
 description = "Reproducible regional grid comparisons and geodesic profiles with PyGMT"
 requires-python = ">=3.11"
 readme = "README.md"

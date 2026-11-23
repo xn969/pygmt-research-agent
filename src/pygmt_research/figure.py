@@ -286,7 +286,12 @@ def render(spec_path, out):
             fig.plot(x=profile.lon, y=profile.lat, pen="1p,black")
         mark_panel(fig, tags[index])
         if index == columns-1:
-            fig.colorbar(position="JMR+o1.3c/0c", frame=f"af+l{spec['unit']}")
+            # Plot coordinates are relative to the lower left of the top-right map.
+            group_height = rows * map_height + (rows - 1) * gap
+            center_y = map_height - group_height / 2
+            fig.colorbar(position=f"x{width + 1.3}c/{center_y}c+jML"
+                                  f"+w{0.8 * map_height}c/0.25c+v",
+                         frame=f"af+l{spec['unit']}")
     if profile is not None:
         fig.shift_origin(xshift=f"{-boxes[-2][0]}c",
                          yshift=f"{-(profile_height + gap)}c")

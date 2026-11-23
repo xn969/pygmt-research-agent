@@ -38,6 +38,8 @@ coordinate scale use outer labels. When an enclosed group has a distinct
 scale, it uses the top for x or the left for y. A full-width profile uses
 distance and data values independently of map longitude and latitude.
 The layout report records annotated sides (W, S, E, N) in panel order.
+The shared vertical colorbar is centered beside the full block of maps that
+use its scale. A profile below the maps does not affect its position.
 
 Maps share a frame size and a compact 0.85 cm gutter. The optional profile
 spans the full map row with the same frame-to-frame gutter. A shared colorbar
