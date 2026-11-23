@@ -39,6 +39,12 @@ In spec.json, set `"panel_labels": "lower"` for (a), (b), or use `"numeric"`
 or a list such as `["B", "C", "D"]`. The default is upper case. Tags have
 black lettering and a white background with 30% transparency.
 
+Map titles are hidden by default. Set `"panel_titles": true` to show the
+grid labels above the maps. Labels still identify profile series and CSV columns.
+Figures use locally installed Times New Roman (regular and bold). For a
+nonstandard font location set PYGMT_RESEARCH_FONT_DIR to the font directory.
+When unavailable, rendering warns and records the Times substitute in layout.json.
+
 The exported PNG is checked for aligned frame rules and equal gutters.
 See layout.json for measured panel bounds in pixels.
 

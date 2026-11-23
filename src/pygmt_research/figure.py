@@ -1,7 +1,11 @@
 """Standalone recipe. Run: python figure.py path/to/spec.json OUTPUT_DIRECTORY"""
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +14,9 @@ import pygmt
 import xarray as xr
 from pyproj import Geod
 from PIL import Image
+from fontTools.agl import UV2AGL
+from fontTools.pens.basePen import BasePen
+from fontTools.ttLib import TTFont
 
 
 def check_layout(path, columns, profile, width, gap, height, dpi):
@@ -91,8 +98,87 @@ def panel_tags(style, count):
 
 def mark_panel(fig, tag):
     fig.text(position="TL", justify="TL", offset="0.16c/-0.16c",
-             text=f"({tag})", font="12p,Helvetica-Bold,black",
+             text=f"({tag})", font="12p,Times-Bold,black",
              fill="white@30", clearance="0.05c/0.04c")
+
+
+class OutlinePen(BasePen):
+    """Write a TrueType contour as a PostScript path, including cubic conversion."""
+    def __init__(self, glyphs):
+        super().__init__(glyphs)
+        self.commands = []
+
+    def command(self, name, *points):
+        self.commands.append(" ".join(f"{v:.3f}" for point in points for v in point) + " " + name)
+
+    def _moveTo(self, point):
+        self.command("moveto", point)
+
+    def _lineTo(self, point):
+        self.command("lineto", point)
+
+    def _curveToOne(self, *points):
+        self.command("curveto", *points)
+
+    def _closePath(self):
+        self.commands.append("closepath")
+
+
+def outline_font(file, name):
+    # Keep the artwork portable across Ghostscript versions. The temporary EPS
+    # contains outlines for the Western PostScript glyph names used by GMT.
+    with TTFont(file) as font:
+        glyphs = font.getGlyphSet()
+        head = font["head"]
+        scale = 1 / head.unitsPerEm
+        result = [f"/{name} 12 dict begin /FontType 3 def /FontName /{name} def",
+                  f"/FontMatrix [{scale} 0 0 {scale} 0 0] def",
+                  f"/FontBBox [{head.xMin} {head.yMin} {head.xMax} {head.yMax}] def",
+                  "/Encoding StandardEncoding def /Glyphs 800 dict dup begin",
+                  "/.notdef {0 0 setcharwidth} bind def"]
+        for code, glyph in font.getBestCmap().items():
+            if code not in UV2AGL:
+                continue
+            pen = OutlinePen(glyphs)
+            glyphs[glyph].draw(pen)
+            result.append(f"/{UV2AGL[code]} {{{glyphs[glyph].width} 0 setcharwidth newpath "
+                          + " ".join(pen.commands) + " fill} bind def")
+        result.extend(["end def /BuildGlyph {exch /Glyphs get exch",
+                       "2 copy known not {pop /.notdef} if get exec} bind def",
+                       "/BuildChar {1 index /Encoding get exch get",
+                       "1 index /BuildGlyph get exec} bind def currentdict end definefont pop"])
+        return "\n".join(result).encode("ascii")
+
+
+def export_png(fig, path):
+    """Map GMT's Times font slots to the user's installed TrueType family."""
+    roots = [Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts",
+             Path("/Library/Fonts/Microsoft"), Path("/System/Library/Fonts/Supplemental"),
+             Path("/usr/share/fonts/truetype/msttcorefonts")]
+    if os.getenv("PYGMT_RESEARCH_FONT_DIR"):
+        roots.insert(0, Path(os.environ["PYGMT_RESEARCH_FONT_DIR"]))
+    for root in roots:
+        for regular, bold in [("times.ttf", "timesbd.ttf"),
+                              ("Times New Roman.ttf", "Times New Roman Bold.ttf"),
+                              ("Times_New_Roman.ttf", "Times_New_Roman_Bold.ttf")]:
+            files = [root / regular, root / bold]
+            if not all(f.is_file() for f in files):
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                eps = Path(tmp) / "figure.eps"
+                fig.savefig(str(eps))
+                ps = eps.read_bytes().replace(b"/Times-Roman ", b"/TimesNewRomanPSMT ")
+                ps = ps.replace(b"/Times-Bold ", b"/TimesNewRomanPS-BoldMT ")
+                fonts = b"\n".join(outline_font(f, n) for f, n in
+                                   zip(files, ["TimesNewRomanPSMT", "TimesNewRomanPS-BoldMT"]))
+                eps.write_bytes(ps.replace(b"%%BeginProlog", b"%%BeginProlog\n" + fonts, 1))
+                subprocess.run(["gmt", "psconvert", str(eps), "-Tg", "-A", "-E180",
+                                "-Qt4", "-Qg4", f"-F{path.with_suffix('')}"], check=True,
+                               cwd=tmp, env={**os.environ, "GMT_SESSION_NAME": "eps-export"})
+            return "Times New Roman"
+    warnings.warn("Times New Roman unavailable; using the Ghostscript Times substitute.")
+    fig.savefig(str(path), dpi=180)
+    return "Times substitute"
 
 
 def render(spec_path, out):
@@ -118,7 +204,8 @@ def render(spec_path, out):
     if not np.isfinite([low, high]).all() or low >= high:
         raise ValueError("scale must be an increasing finite pair")
     fig = pygmt.Figure()
-    pygmt.config(MAP_FRAME_TYPE="plain", FONT_ANNOT_PRIMARY="9p", FORMAT_GEO_MAP="ddd.xx")
+    pygmt.config(MAP_FRAME_TYPE="plain", FONT="11p,Times-Roman",
+                 FONT_ANNOT_PRIMARY="9p,Times-Roman", FORMAT_GEO_MAP="ddd.xx")
     pygmt.makecpt(cmap="viridis", series=[low, high])
     profile = None
     if "profile" in spec:
@@ -156,7 +243,7 @@ def render(spec_path, out):
             fig.shift_origin(xshift=f"{stride}c")
         sides = "WSne" if index == 0 else "wSne"
         fig.grdimage(grid=grid, region=region, projection=f"M{width}c", cmap=True,
-                     frame=["af", f"{sides}+t{label}"])
+                     frame=["af", f"{sides}+t{label}" if spec.get("panel_titles", False) else sides])
         if profile is not None:
             fig.plot(x=profile.lon, y=profile.lat, pen="1p,black")
         mark_panel(fig, tags[index])
@@ -175,10 +262,11 @@ def render(spec_path, out):
         fig.legend(position="JTR+jTR", box="+gwhite")
         mark_panel(fig, tags[-1])
     out.mkdir(parents=True, exist_ok=False)
-    fig.savefig(str(out / "figure.png"), dpi=180)
+    family = export_png(fig, out / "figure.png")
     report = check_layout(out / "figure.png", len(grids), profile is not None,
                           width, gap, profile_height, 180)
     report["tags"] = tags
+    report["font"] = family
     (out / "layout.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     if profile is not None:
         profile.to_csv(out / "profile.csv", index=False)

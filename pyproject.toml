@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygmt-research-agent"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Reproducible regional grid comparisons and geodesic profiles with PyGMT"
 requires-python = ">=3.11"
 readme = "README.md"
 license = {file = "LICENSE"}
-dependencies = ["pygmt>=0.14", "numpy", "xarray", "pandas", "netCDF4", "pyproj", "scipy", "Pillow"]
+dependencies = ["pygmt>=0.14", "numpy", "xarray", "pandas", "netCDF4", "pyproj", "scipy", "Pillow", "fonttools"]
 
 [project.scripts]
 pygmt-research = "pygmt_research.cli:main"

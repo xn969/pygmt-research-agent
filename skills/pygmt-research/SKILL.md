@@ -12,3 +12,6 @@ Run `pygmt-research render SPEC.json NEW_OUTPUT_DIR`. Read the status, inspect t
 For an unfamiliar layout, start with a copy of the editable figure.py and adapt native PyGMT code in the user's project. Preserve the original inputs and the validated recipe. Record any changes to sampling or scientific assumptions.
 
 Use panel_labels in the spec for user-requested lettering (upper, lower, numeric or a list). Read layout.json after rendering and inspect the preview for long titles, clipped annotations and legend overlap. Keep the full-width profile aligned with the outer map frames.
+
+Use Times New Roman and omit individual map titles by default. Set panel_titles
+to true only when requested. Mention a reported font substitution when delivering a figure.
