@@ -19,51 +19,68 @@ from fontTools.pens.basePen import BasePen
 from fontTools.ttLib import TTFont
 
 
-def check_layout(path, columns, profile, width, gap, height, dpi):
-    """Locate frame rules in the exported PNG and verify their geometry."""
+def annotation_sides(panels):
+    """Logical rectangles are (left, top, right, bottom, x_axis, y_axis)."""
+    marked = [set() for _ in panels]
+    for axis, before, after in [(0, "N", "S"), (1, "W", "E")]:
+        cross = 1 - axis
+        connected = [set() for _ in panels]
+        for i, panel in enumerate(panels):
+            for side, edge, opposite in [(before, cross, cross+2), (after, cross+2, cross)]:
+                neighbors = [j for j, other in enumerate(panels)
+                             if other[opposite] == panel[edge] and
+                             max(panel[axis], other[axis]) < min(panel[axis+2], other[axis+2])]
+                if not neighbors:
+                    marked[i].add(side)
+                for j in neighbors:
+                    other = panels[j]
+                    if (panel[axis], panel[axis+2], panel[4+axis]) == (
+                            other[axis], other[axis+2], other[4+axis]):
+                        connected[i].add(j)
+        # An enclosed group with its own scale gets one consistent annotation.
+        unseen = set(range(len(panels)))
+        while unseen:
+            stack = [unseen.pop()]
+            group = []
+            while stack:
+                i = stack.pop()
+                group.append(i)
+                pending = connected[i] & unseen
+                stack.extend(pending)
+                unseen.difference_update(pending)
+            if not any(marked[i] & {before, after} for i in group):
+                marked[min(group, key=lambda i: panels[i][cross])].add(before)
+    return ["".join(s if s in sides else s.lower() for s in "WSEN") for sides in marked]
+
+
+def check_layout(path, boxes, gap, dpi):
+    """Check expected panel corners against horizontal frame rules in the PNG."""
     with Image.open(path) as image:
         ink = np.asarray(image.convert("RGB")).max(axis=2) < 65
     px = dpi / 2.54
-    panels = []
-    tolerance = 7  # Includes both rasterized stroke edges at 180 dpi.
-
-    def matching_rules(count, frame_width):
-        matches = []
-        for y, row in enumerate(ink):
-            edges = np.flatnonzero(np.diff(np.r_[False, row, False]))
-            runs = edges.reshape(-1, 2)
-            runs = runs[np.abs(runs[:, 1] - runs[:, 0] - frame_width * px) <= tolerance]
-            if len(runs) == count:
-                matches.append((y, runs))
-        return matches
-
-    maps = matching_rules(columns, width)
-    if not maps:
-        raise ValueError("Layout check: could not locate aligned map frames")
-    top, bounds = maps[0]
-    # A single-column profile shares the map width, so find its rules by height.
-    bottom = maps[-1][0]
-    if profile:
-        span = columns * width + (columns - 1) * gap
-        rules = matching_rules(1, span)
-        if not rules:
-            raise ValueError("Layout check: missing profile frame")
-        base = rules[-1][0]
-        target = base - height * px
-        row, profile_bounds = min(rules, key=lambda entry: abs(entry[0] - target))
-        candidates = [y for y, _ in maps if y < row - tolerance]
-        if not candidates:
-            raise ValueError("Layout check: missing lower map frame")
-        bottom = max(candidates)
-        errors = [row-target, row-bottom-gap*px, profile_bounds[0, 0]-bounds[0, 0],
-                  profile_bounds[0, 1]-bounds[-1, 1]]
-        if max(map(abs, errors)) > tolerance:
-            raise ValueError("Layout check: profile alignment or vertical gutter differs")
-        panels.append([int(bounds[0, 0]), row, int(bounds[-1, 1]), base])
-    if bottom <= top or np.any(abs(bounds[1:, 0]-bounds[:-1, 1]-gap*px) > tolerance):
-        raise ValueError("Layout check: map frames or gutters differ")
-    panels[:0] = [[int(left), top, int(right), bottom] for left, right in bounds]
-    return {"frame_bounds_px": panels, "gutter_cm": gap, "tolerance_px": tolerance}
+    tolerance = 7
+    rules = []
+    min_width = min(box[2]-box[0] for box in boxes)*px-tolerance
+    for y, row in enumerate(ink):
+        edges = np.flatnonzero(np.diff(np.r_[False, row, False])).reshape(-1, 2)
+        rules.extend((int(left), y, int(right)) for left, right in edges
+                     if right-left >= min_width)
+    first_width = (boxes[0][2]-boxes[0][0])*px
+    origins = [rule for rule in rules if abs(rule[2]-rule[0]-first_width) <= tolerance]
+    for x0, y0, _ in origins:
+        measured = []
+        for left, top, right, bottom in boxes:
+            def locate(y):
+                target = np.array([x0+left*px, y0+y*px, x0+right*px])
+                nearest = min(rules, key=lambda r: max(abs(r-target)))
+                return nearest if max(abs(nearest-target)) <= tolerance else None
+            upper, lower = locate(top), locate(bottom)
+            if upper is None or lower is None:
+                break
+            measured.append([upper[0], upper[1], upper[2], lower[1]])
+        if len(measured) == len(boxes):
+            return {"frame_bounds_px": measured, "gutter_cm": gap, "tolerance_px": tolerance}
+    raise ValueError("Layout check: expected panel frames could not be verified")
 
 
 def read_grid(path, variable):
@@ -237,34 +254,56 @@ def render(spec_path, out):
     tags = panel_tags(spec.get("panel_labels", "upper"), len(grids) + int(profile is not None))
     width, gap, profile_height = 8, 0.85, 4
     stride = width + gap
-    span = width + stride * (len(grids) - 1)
+    columns = spec.get("columns", len(grids))
+    if type(columns) is not int or not 1 <= columns <= len(grids):
+        raise ValueError("columns must be between 1 and the number of grids")
+    rows = (len(grids) + columns - 1) // columns
+    span = width + stride * (columns - 1)
+    bounds = "/".join(str(v) for v in region)
+    map_height = float(subprocess.check_output(
+        ["gmt", "mapproject", f"-R{bounds}", f"-JM{width}c", "-Wh", "--PROJ_LENGTH_UNIT=cm"],
+        text=True))
+    panels, boxes = [], []
+    for i in range(len(grids)):
+        row, col = divmod(i, columns)
+        panels.append((col, row, col+1, row+1, ("longitude", west, east),
+                       ("mercator latitude", south, north)))
+        left, top = col*stride, row*(map_height+gap)
+        boxes.append((left, top, left+width, top+map_height))
+    if profile is not None:
+        panels.append((0, rows, columns, rows+1, "distance_km", ("value", spec["unit"])))
+        top = rows*(map_height+gap)
+        boxes.append((0, top, span, top+profile_height))
+    frames = annotation_sides(panels)
     for index, (grid, label) in enumerate(zip(grids, labels)):
         if index:
-            fig.shift_origin(xshift=f"{stride}c")
-        sides = "WSne" if index == 0 else "wSne"
+            fig.shift_origin(xshift=f"{boxes[index][0]-boxes[index-1][0]}c",
+                             yshift=f"{boxes[index-1][3]-boxes[index][3]}c")
+        sides = frames[index]
         fig.grdimage(grid=grid, region=region, projection=f"M{width}c", cmap=True,
                      frame=["af", f"{sides}+t{label}" if spec.get("panel_titles", False) else sides])
         if profile is not None:
             fig.plot(x=profile.lon, y=profile.lat, pen="1p,black")
         mark_panel(fig, tags[index])
-    fig.colorbar(position="JMR+o0.6c/0c", frame=f"af+l{spec['unit']}")
+        if index == columns-1:
+            fig.colorbar(position="JMR+o1.3c/0c", frame=f"af+l{spec['unit']}")
     if profile is not None:
-        fig.shift_origin(xshift=f"{-stride*(len(grids)-1)}c",
+        fig.shift_origin(xshift=f"{-boxes[-2][0]}c",
                          yshift=f"{-(profile_height + gap)}c")
         values = profile[labels].to_numpy()
         ymin, ymax = np.nanmin(values), np.nanmax(values)
         pad = max((ymax-ymin)*0.08, 1e-6)
         fig.basemap(region=[0, distances[-1]/1000, ymin-pad, ymax+pad],
                     projection=f"X{span}c/{profile_height}c",
-                    frame=["xaf+lDistance (km)", f"yaf+l{spec['unit']}", "WSne"])
+                    frame=["xaf+lDistance (km)", f"yaf+l{spec['unit']}", frames[-1]])
         for label, color in zip(labels, ["black", "red", "blue", "green"]):
             fig.plot(x=profile.distance_km, y=profile[label], pen=f"1p,{color}", label=label)
         fig.legend(position="JTR+jTR", box="+gwhite")
         mark_panel(fig, tags[-1])
     out.mkdir(parents=True, exist_ok=False)
     family = export_png(fig, out / "figure.png")
-    report = check_layout(out / "figure.png", len(grids), profile is not None,
-                          width, gap, profile_height, 180)
+    report = check_layout(out / "figure.png", boxes, gap, 180)
+    report["annotated_sides"] = ["".join(s for s in frame if s.isupper()) for frame in frames]
     report["tags"] = tags
     report["font"] = family
     (out / "layout.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

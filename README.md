@@ -32,6 +32,13 @@ Omit profile for maps only. For profile set start and end as [longitude, latitud
 
 ## Panel layout
 
+Set `"columns": 2` for two map columns; by default all maps occupy one row.
+Coordinates appear on exposed panel edges. Aligned neighbors sharing a
+coordinate scale use outer labels. When an enclosed group has a distinct
+scale, it uses the top for x or the left for y. A full-width profile uses
+distance and data values independently of map longitude and latitude.
+The layout report records annotated sides (W, S, E, N) in panel order.
+
 Maps share a frame size and a compact 0.85 cm gutter. The optional profile
 spans the full map row with the same frame-to-frame gutter. A shared colorbar
 sits outside the last map. Panel order is left to right, then the profile.

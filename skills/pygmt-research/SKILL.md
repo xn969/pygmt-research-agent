@@ -15,3 +15,7 @@ Use panel_labels in the spec for user-requested lettering (upper, lower, numeric
 
 Use Times New Roman and omit individual map titles by default. Set panel_titles
 to true only when requested. Mention a reported font substitution when delivering a figure.
+
+Set columns for multi-row maps. Use exterior coordinate labels and share only
+aligned, equivalent axes. For enclosed independent scales consistently use top
+for x and left for y. Inspect annotated_sides in layout.json after rendering.
